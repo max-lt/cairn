@@ -5,8 +5,9 @@
 //! chunks across files share storage on the remote object store.
 //!
 //! The [`ChunkTransform`] trait is the seam at which optional encryption
-//! and (future) compression plug in. v1 ships [`Identity`] only; encryption
-//! lands in M11 without disturbing the scan / backup / restore pipeline.
+//! and (future) compression plug in. v1 ships [`Identity`] and [`Encrypt`]
+//! (ChaCha20-Poly1305 with content-derived nonce → CDC-dedup-preserving
+//! convergent encryption).
 
 pub mod chunker;
 pub mod manifest;
@@ -14,7 +15,7 @@ pub mod transform;
 
 pub use chunker::{CDC_RATIO_DENOM, CdcChunker, Chunk};
 pub use manifest::build_manifest;
-pub use transform::{ChunkTransform, Identity};
+pub use transform::{ChunkTransform, Encrypt, Identity};
 
 /// Errors produced by [`cairn-cas`](crate) operations.
 #[derive(Debug, thiserror::Error)]

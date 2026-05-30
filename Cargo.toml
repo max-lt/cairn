@@ -54,6 +54,12 @@ serde = { version = "1", features = ["derive"] }
 # Signing
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 
+# AEAD (M11 client-side encryption)
+chacha20poly1305 = "0.10"
+
+# Password-derived KDF (M11)
+argon2 = "0.5"
+
 # Random
 rand = "0.9"
 
