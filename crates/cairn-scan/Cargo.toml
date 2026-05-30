@@ -7,9 +7,9 @@ edition.workspace = true
 cairn-types = { workspace = true }
 blake3 = { workspace = true }
 ignore = { workspace = true }
-jwalk = { workspace = true }
-postcard = { workspace = true }
 rayon = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
