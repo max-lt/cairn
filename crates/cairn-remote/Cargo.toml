@@ -1,0 +1,14 @@
+[package]
+name = "cairn-remote"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cairn-types = { workspace = true }
+bytes = { workspace = true }
+object_store = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

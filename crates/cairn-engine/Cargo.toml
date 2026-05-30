@@ -1,0 +1,15 @@
+[package]
+name = "cairn-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cairn-types = { workspace = true }
+cairn-cas = { workspace = true }
+cairn-log = { workspace = true }
+cairn-catalog = { workspace = true }
+cairn-scan = { workspace = true }
+cairn-remote = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

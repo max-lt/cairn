@@ -1,6 +1,89 @@
-[package]
-name = "cairn"
+[workspace]
+members = [
+    "crates/cairn-types",
+    "crates/cairn-cas",
+    "crates/cairn-log",
+    "crates/cairn-catalog",
+    "crates/cairn-scan",
+    "crates/cairn-remote",
+    "crates/cairn-engine",
+    "crates/cairn-cli",
+]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates
+cairn-types = { path = "crates/cairn-types" }
+cairn-cas = { path = "crates/cairn-cas" }
+cairn-log = { path = "crates/cairn-log" }
+cairn-catalog = { path = "crates/cairn-catalog" }
+cairn-scan = { path = "crates/cairn-scan" }
+cairn-remote = { path = "crates/cairn-remote" }
+cairn-engine = { path = "crates/cairn-engine" }
+
+# Hashing
+blake3 = "1"
+
+# Content-defined chunking
+fastcdc = { version = "3", features = ["tokio"] }
+
+# Filesystem walk (parallel)
+jwalk = "0.8"
+
+# CPU parallelism
+rayon = "1"
+
+# Local embedded ACID KV store
+redb = "2"
+
+# Object storage (R2 via S3-compatible aws backend)
+object_store = { version = "0.11", features = ["aws"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+postcard = { version = "1", features = ["alloc"] }
+serde = { version = "1", features = ["derive"] }
+
+# Signing
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+# Random
+rand = "0.9"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Config
+toml = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Ignore rules (.gitignore-style, from ripgrep)
+ignore = "0.4"
+
+# Byte buffers
+bytes = "1"
+
+# Hex encoding
+hex = "0.4"
+
+# Testing
+tempfile = "3"
+
+[profile.release]
+strip = true
+opt-level = 3
+codegen-units = 1
+lto = true

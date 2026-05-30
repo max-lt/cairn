@@ -1,0 +1,15 @@
+[package]
+name = "cairn-scan"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cairn-types = { workspace = true }
+blake3 = { workspace = true }
+ignore = { workspace = true }
+jwalk = { workspace = true }
+postcard = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

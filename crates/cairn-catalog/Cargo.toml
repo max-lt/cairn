@@ -1,0 +1,12 @@
+[package]
+name = "cairn-catalog"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cairn-types = { workspace = true }
+postcard = { workspace = true }
+redb = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
