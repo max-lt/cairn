@@ -275,7 +275,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cairn-engine",
+ "cairn-log",
+ "cairn-types",
  "clap",
+ "tempfile",
  "tokio",
  "toml",
  "tracing",
