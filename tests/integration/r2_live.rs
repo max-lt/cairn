@@ -31,6 +31,17 @@
 //! using `aws-sigv4` + `reqwest` — exactly the pattern Cairn would
 //! avoid in production (we want object_store's abstractions) but
 //! which is necessary here to inject a deliberately wrong checksum.
+//!
+//! ## Skip behaviour
+//!
+//! Default `cargo test` skips all four (they are `#[ignore]`d); cargo's
+//! own "N ignored" line is the signal that a live suite exists. When
+//! invoked with `--ignored` but **without** the `CAIRN_R2_*` env vars,
+//! each test prints a loud, capture-bypassing `WARNING: SKIPPED …` to
+//! stderr and passes — so you never get a green "ok" that silently
+//! verified nothing. Setting [`REQUIRED_VAR`] (`CAIRN_R2_REQUIRED=1`)
+//! flips those skips into hard failures, which is what a CI job with
+//! the secrets configured should use.
 
 use std::env;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -48,6 +59,39 @@ const ENDPOINT_VAR: &str = "CAIRN_R2_ENDPOINT";
 const BUCKET_VAR: &str = "CAIRN_R2_BUCKET";
 const ACCESS_VAR: &str = "CAIRN_R2_ACCESS_KEY_ID";
 const SECRET_VAR: &str = "CAIRN_R2_SECRET_ACCESS_KEY";
+
+/// When set (to anything), a missing-env skip becomes a hard failure
+/// instead of a warning. Intended for CI: a dedicated job sets the
+/// `CAIRN_R2_*` secrets AND `CAIRN_R2_REQUIRED=1`, so an expired or
+/// mis-named secret surfaces as a red build rather than a silently
+/// green "everything passed" — the exact failure mode a checksum
+/// integrity test must never have.
+const REQUIRED_VAR: &str = "CAIRN_R2_REQUIRED";
+
+/// Emit a skip notice that survives libtest's output capture.
+///
+/// `cargo test` captures `eprintln!` / `println!` for tests that
+/// *pass*, so a normal warning is invisible unless `--nocapture` is
+/// passed — precisely when a reviewer would NOT notice that the live
+/// suite silently no-op'd. We bypass the capture machinery by writing
+/// straight to the stderr file descriptor (fd 2) via `libc::write`,
+/// which `std::io::set_output_capture` (libtest's mechanism) does not
+/// intercept. The warning therefore always reaches the terminal while
+/// the test still passes (skips).
+///
+/// If [`REQUIRED_VAR`] is set, this panics instead — turning a skip
+/// into a loud red failure for CI.
+fn warn_or_fail_skipped(reason: &str) {
+    if std::env::var(REQUIRED_VAR).is_ok() {
+        panic!("live R2 test required ({REQUIRED_VAR} set) but {reason}");
+    }
+    let msg = format!("\nWARNING: SKIPPED live R2 test — {reason}\n");
+    // SAFETY: writing an immutable byte slice to the always-open stderr
+    // fd is sound; the return value is ignored (best-effort warning).
+    unsafe {
+        libc::write(2, msg.as_ptr() as *const libc::c_void, msg.len());
+    }
+}
 
 /// Test harness: env config + a `reqwest::Client` + signed AWS creds,
 /// plus a per-process-per-test unique key prefix so concurrent test
@@ -93,9 +137,9 @@ impl R2Test {
         match Self::from_env() {
             Some(t) => Some(t),
             None => {
-                eprintln!(
-                    "skipping live R2 test: set {ENDPOINT_VAR}, {BUCKET_VAR}, {ACCESS_VAR}, {SECRET_VAR}"
-                );
+                warn_or_fail_skipped(&format!(
+                    "missing env — set {ENDPOINT_VAR}, {BUCKET_VAR}, {ACCESS_VAR}, {SECRET_VAR}"
+                ));
                 None
             }
         }
@@ -178,10 +222,8 @@ async fn signed_request(
     }
     instructions.apply_to_request_http1x(&mut req);
 
-    let mut rq = reqwest::Request::new(
-        req.method().clone(),
-        req.uri().to_string().parse().unwrap(),
-    );
+    let mut rq =
+        reqwest::Request::new(req.method().clone(), req.uri().to_string().parse().unwrap());
     *rq.headers_mut() = req.headers().clone();
     *rq.body_mut() = Some(reqwest::Body::from(body.to_vec()));
 
@@ -191,12 +233,7 @@ async fn signed_request(
     (status, text)
 }
 
-async fn raw_put(
-    t: &R2Test,
-    key: &str,
-    body: &[u8],
-    checksum_b64: Option<&str>,
-) -> (u16, String) {
+async fn raw_put(t: &R2Test, key: &str, body: &[u8], checksum_b64: Option<&str>) -> (u16, String) {
     let url = t.object_url(key);
     let extra: Vec<(&str, &str)> = match checksum_b64 {
         Some(c) => vec![("x-amz-checksum-sha256", c)],
@@ -256,8 +293,7 @@ fn r2_manifest_roundtrip_via_cairn_remote() {
     rt().block_on(async {
         let remote =
             Remote::r2(&t.endpoint, &t.bucket, &t.access, &t.secret).expect("build Remote");
-        let content =
-            ContentHash::from_data(format!("manifest test {}", t.prefix).as_bytes());
+        let content = ContentHash::from_data(format!("manifest test {}", t.prefix).as_bytes());
         let manifest_bytes = Bytes::from_static(b"postcard-manifest-blob");
         remote
             .put_manifest_if_absent(content, manifest_bytes.clone())
@@ -265,7 +301,10 @@ fn r2_manifest_roundtrip_via_cairn_remote() {
             .expect("put_manifest_if_absent");
         let got = remote.get_manifest(content).await.expect("get_manifest");
         assert_eq!(got, manifest_bytes);
-        remote.delete_manifest(content).await.expect("delete_manifest");
+        remote
+            .delete_manifest(content)
+            .await
+            .expect("delete_manifest");
     });
 }
 
