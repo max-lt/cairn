@@ -12,7 +12,13 @@ use crate::ids::{ContentHash, MachineId};
 use crate::path::PathKey;
 
 /// A specific location where a content was observed: `(machine, path)`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// `Ord` is derived so that materialized state can be serialized
+/// canonically (sorted `Vec<Location>` in [`ContentRecord::live_locations`])
+/// — this is what lets two machines fold the same set of log entries in
+/// any order and still produce byte-identical projection bytes (and
+/// therefore identical state hashes).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Location {
     /// The machine that observed the content at this path.
     pub machine: MachineId,
