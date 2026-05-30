@@ -42,3 +42,15 @@ path = "integration/encryption.rs"
 [[test]]
 name = "engine"
 path = "integration/engine.rs"
+
+[[test]]
+name = "full_cycle"
+path = "integration/full_cycle.rs"
+
+[[test]]
+name = "incremental"
+path = "integration/incremental.rs"
+
+[[test]]
+name = "dedup"
+path = "integration/dedup.rs"
