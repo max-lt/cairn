@@ -252,12 +252,17 @@ dependencies = [
 name = "cairn-engine"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "cairn-cas",
  "cairn-catalog",
  "cairn-log",
  "cairn-remote",
  "cairn-scan",
  "cairn-types",
+ "ed25519-dalek",
+ "object_store",
+ "postcard",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
@@ -276,6 +281,7 @@ dependencies = [
  "cairn-types",
  "ed25519-dalek",
  "tempfile",
+ "tokio",
  "tracing",
 ]
 

@@ -10,6 +10,13 @@ cairn-log = { workspace = true }
 cairn-catalog = { workspace = true }
 cairn-scan = { workspace = true }
 cairn-remote = { workspace = true }
+bytes = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+ed25519-dalek = { workspace = true }
+object_store = { workspace = true }
+postcard = { workspace = true }
+tempfile = { workspace = true }

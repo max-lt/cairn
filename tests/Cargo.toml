@@ -14,6 +14,7 @@ cairn-remote = { workspace = true }
 cairn-engine = { workspace = true }
 ed25519-dalek = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [lib]
@@ -23,3 +24,7 @@ path = "src/lib.rs"
 [[test]]
 name = "local_pipeline"
 path = "integration/local_pipeline.rs"
+
+[[test]]
+name = "backup_restore"
+path = "integration/backup_restore.rs"
