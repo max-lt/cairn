@@ -102,6 +102,10 @@ bytes = "1"
 # Hex encoding
 hex = "0.4"
 
+# SHA-256 — only for live R2 integration tests (S3 checksum header is
+# base64(SHA-256), not BLAKE3).
+sha2 = "0.10"
+
 # Testing
 tempfile = "3"
 

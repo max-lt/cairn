@@ -13,10 +13,17 @@ cairn-catalog = { workspace = true }
 cairn-scan = { workspace = true }
 cairn-remote = { workspace = true }
 cairn-engine = { workspace = true }
+aws-credential-types = "1"
+aws-sigv4 = { version = "1", features = ["http1"] }
+base64 = "0.22"
 bytes = { workspace = true }
 ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+http = "1"
 object_store = { workspace = true }
 postcard = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -80,3 +87,7 @@ path = "safety/crash_resume.rs"
 [[test]]
 name = "tamper_detection"
 path = "safety/tamper_detection.rs"
+
+[[test]]
+name = "r2_live"
+path = "integration/r2_live.rs"
