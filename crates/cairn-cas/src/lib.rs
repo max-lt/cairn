@@ -11,10 +11,12 @@
 
 pub mod chunker;
 pub mod manifest;
+pub mod secret;
 pub mod transform;
 
 pub use chunker::{CDC_RATIO_DENOM, CdcChunker, Chunk};
 pub use manifest::build_manifest;
+pub use secret::SecretBytes;
 pub use transform::{ChunkTransform, Encrypt, Identity};
 
 /// Errors produced by [`cairn-cas`](crate) operations.

@@ -13,9 +13,9 @@
 //! restore can verify the reassembled, reverse-transformed file.
 
 use bytes::Bytes;
-use zeroize::Zeroizing;
 
 use crate::CasError;
+use crate::secret::SecretBytes;
 
 /// Domain-separation label for the chunk-encryption key derivation. Bumping
 /// this label invalidates every prior backup, so it must NEVER change in
@@ -79,15 +79,21 @@ impl ChunkTransform for Identity {
 /// On-wire format: `nonce(12 bytes) || ciphertext_with_tag`. The 16-byte
 /// Poly1305 tag is appended by ChaCha20-Poly1305 to the ciphertext, so
 /// the stored size for a plaintext of length `N` is `12 + N + 16`.
+///
+/// The 32-byte key is held in [`SecretBytes`] — pinned to a dedicated
+/// memory page, `mlock`-ed (no swap), allocated via `memfd_secret` on
+/// Linux 5.14+ (no kernel direct-map exposure), and zeroized on drop.
+/// `Encrypt` deliberately does **not** implement `Debug` (its only
+/// non-trivial field is `SecretBytes` which already elides).
 pub struct Encrypt {
-    key: Zeroizing<[u8; 32]>,
+    key: SecretBytes,
 }
 
 impl Encrypt {
     /// Build from a 32-byte raw key (test fixtures).
     pub fn from_key(key: [u8; 32]) -> Self {
         Self {
-            key: Zeroizing::new(key),
+            key: SecretBytes::new(key),
         }
     }
 
@@ -101,7 +107,7 @@ impl Encrypt {
             .hash_password_into(passphrase.as_bytes(), salt, &mut key)
             .map_err(|e| CasError::Transform(format!("argon2 KDF failed: {e}")))?;
         Ok(Self {
-            key: Zeroizing::new(key),
+            key: SecretBytes::new(key),
         })
     }
 
@@ -122,8 +128,14 @@ impl Encrypt {
         let seed = mnemonic.to_seed("");
         let key = blake3::derive_key(CONTENT_KEY_DOMAIN, &seed);
         Self {
-            key: Zeroizing::new(key),
+            key: SecretBytes::new(key),
         }
+    }
+
+    /// `true` when the underlying key page is allocated via Linux
+    /// `memfd_secret` (kernel direct-map isolation). Diagnostic only.
+    pub fn is_memfd_secret_backed(&self) -> bool {
+        self.key.is_memfd_secret_backed()
     }
 }
 
@@ -135,7 +147,7 @@ impl ChunkTransform for Encrypt {
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes.copy_from_slice(&blake3::hash(plaintext).as_bytes()[..12]);
 
-        let cipher = ChaCha20Poly1305::new_from_slice(&*self.key)
+        let cipher = ChaCha20Poly1305::new_from_slice(self.key.expose())
             .map_err(|e| CasError::Transform(format!("invalid AEAD key: {e}")))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
@@ -159,7 +171,7 @@ impl ChunkTransform for Encrypt {
             )));
         }
         let (nonce_bytes, body) = stored.split_at(12);
-        let cipher = ChaCha20Poly1305::new_from_slice(&*self.key)
+        let cipher = ChaCha20Poly1305::new_from_slice(self.key.expose())
             .map_err(|e| CasError::Transform(format!("invalid AEAD key: {e}")))?;
         let nonce = Nonce::from_slice(nonce_bytes);
         let plaintext = cipher

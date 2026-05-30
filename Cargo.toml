@@ -71,6 +71,11 @@ zeroize = "1"
 # Terminal raw-mode for interactive mnemonic entry
 crossterm = "0.29"
 
+# Low-level syscalls for hardened in-RAM secret storage (mlock /
+# memfd_secret). libc has no C build script — pure Rust extern decls
+# bound at link time.
+libc = "0.2"
+
 # Random
 rand = "0.9"
 

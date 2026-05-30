@@ -11,6 +11,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 chacha20poly1305 = { workspace = true }
 fastcdc = { workspace = true }
+libc = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 zeroize = { workspace = true }
