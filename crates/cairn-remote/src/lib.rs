@@ -188,6 +188,31 @@ impl Remote {
         fetch(&*self.store, &path).await
     }
 
+    /// Delete a manifest. Used only by `cairn gc --confirm`; never
+    /// triggered automatically.
+    pub async fn delete_manifest(&self, content: ContentHash) -> Result<(), RemoteError> {
+        let path = Self::manifest_path(content);
+        let os_path = parse_os_path(&path)?;
+        match self.store.delete(&os_path).await {
+            Ok(()) => Ok(()),
+            Err(object_store::Error::NotFound { .. }) => Err(RemoteError::NotFound { key: path }),
+            Err(e) => Err(RemoteError::Backend(e.to_string())),
+        }
+    }
+
+    /// Delete a chunk. Used only by `cairn gc --confirm` after the
+    /// caller has confirmed the chunk is no longer reachable from any
+    /// live manifest.
+    pub async fn delete_chunk(&self, id: ChunkId) -> Result<(), RemoteError> {
+        let path = Self::chunk_path(id);
+        let os_path = parse_os_path(&path)?;
+        match self.store.delete(&os_path).await {
+            Ok(()) => Ok(()),
+            Err(object_store::Error::NotFound { .. }) => Err(RemoteError::NotFound { key: path }),
+            Err(e) => Err(RemoteError::Backend(e.to_string())),
+        }
+    }
+
     // ----- Log segments --------------------------------------------------
 
     /// Object key for a segment by `(machine, seq_start)`.

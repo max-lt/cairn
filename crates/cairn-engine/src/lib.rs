@@ -8,10 +8,12 @@
 
 pub mod backup;
 pub mod restore;
+pub mod retention;
 pub mod sync;
 
 pub use backup::{BackupSummary, backup_content};
 pub use restore::restore;
+pub use retention::{RetentionCandidate, RetentionPlan, dry_run_retention, gc_confirm};
 pub use sync::{
     PullSummary, PushSummary, list_remote_machines, pull_from, push_pending_as_segment,
 };
