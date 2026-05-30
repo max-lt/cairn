@@ -6,10 +6,10 @@ edition.workspace = true
 [dependencies]
 blake3 = { workspace = true }
 ed25519-dalek = { workspace = true }
-hex = { workspace = true }
 postcard = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+tempfile = { workspace = true }
