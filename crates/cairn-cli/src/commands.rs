@@ -9,6 +9,9 @@ use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
+use cairn_bip39::bip39::{Language, Mnemonic};
+use cairn_bip39::{Outcome, read_mnemonic};
+use cairn_cas::{ChunkTransform, Encrypt, Identity};
 use cairn_engine::{Engine, dry_run_retention, gc_confirm};
 use cairn_log::LocationState;
 use cairn_types::{Config, ContentHash, PathKey};
@@ -56,13 +59,108 @@ fn load_config(path: &Path) -> Result<Config> {
     Config::load_from(path).with_context(|| format!("loading config from {}", path.display()))
 }
 
+/// Open an engine wired with [`Identity`] — for metadata-only commands
+/// (`status`, `dupes`, `locate`, `orphans`, `sync`, `check`, `gc dry-run`)
+/// that never read file bytes for upload.
 fn open_engine(config_path: &Path, catalog_path: &Path) -> Result<Engine> {
+    open_engine_with_transform(config_path, catalog_path, Box::new(Identity))
+}
+
+/// Open an engine with the caller-supplied [`ChunkTransform`].
+fn open_engine_with_transform(
+    config_path: &Path,
+    catalog_path: &Path,
+    transform: Box<dyn ChunkTransform>,
+) -> Result<Engine> {
     let config = load_config(config_path)?;
-    Engine::open(config, catalog_path).context("opening engine")
+    Engine::open(config, catalog_path, transform).context("opening engine")
+}
+
+/// Build the content-key transform for commands that need to encrypt or
+/// decrypt chunks. When encryption is enabled, prompts the user for
+/// their 24-word BIP-39 mnemonic via crossterm and derives the content
+/// key via [`Encrypt::from_mnemonic`].
+///
+/// **The mnemonic is never persisted on disk.** It lives only in memory
+/// (zeroized on drop by `bip39-prompt`) for the duration of this
+/// operation. Re-typing it on each backup / restore is the entire point
+/// of the security model: machine theft does not enable decryption.
+fn build_content_transform(config: &Config) -> Result<Box<dyn ChunkTransform>> {
+    if !config.encryption.enabled {
+        return Ok(Box::new(Identity));
+    }
+    let mnemonic = prompt_mnemonic()?;
+    let transform = Encrypt::from_mnemonic(&mnemonic);
+    drop(mnemonic);
+    Ok(Box::new(transform))
+}
+
+/// Prompt the user for a BIP-39 mnemonic via the crossterm front-end.
+/// Defaults to 24 words (256 bits of entropy).
+fn prompt_mnemonic() -> Result<Mnemonic> {
+    eprintln!();
+    eprintln!("Enter your 24-word BIP-39 recovery phrase.");
+    eprintln!(
+        "Type a few letters then press 0-9 to pick a numbered match, \
+         Tab/Enter to accept a unique match, Backspace to edit, Esc to cancel."
+    );
+    eprintln!();
+    match read_mnemonic(Language::English, 24)
+        .map_err(|e| anyhow!("failed to read mnemonic from terminal: {e}"))?
+    {
+        Outcome::Valid(m) => Ok(m),
+        Outcome::InvalidChecksum => Err(anyhow!(
+            "24 words entered but the BIP-39 checksum is invalid — please re-check the words"
+        )),
+        Outcome::Aborted => Err(anyhow!("mnemonic entry cancelled")),
+    }
+}
+
+/// Generate a fresh random 24-word BIP-39 mnemonic and display it.
+/// **Never persisted.** The user MUST write the 24 words down on paper
+/// before continuing.
+pub async fn run_key_init() -> Result<()> {
+    let mnemonic =
+        Mnemonic::generate(24).map_err(|e| anyhow!("bip39 mnemonic generation failed: {e}"))?;
+    let words: Vec<&'static str> = mnemonic.words().collect();
+
+    println!();
+    println!("==============================================================");
+    println!(" Cairn content-key recovery phrase — 24 words, write them DOWN");
+    println!("==============================================================");
+    println!();
+    for (i, w) in words.iter().enumerate() {
+        print!("  {:>2}. {:<12}", i + 1, w);
+        if ((i + 1) % 3) == 0 {
+            println!();
+        }
+    }
+    println!();
+    println!("These words derive the content-encryption key used to encrypt");
+    println!("every chunk uploaded to the remote. They are NOT persisted on");
+    println!("disk; if you lose them, you cannot decrypt your backups.");
+    println!();
+    println!("Use `cairn key verify` to re-type them and check the checksum.");
+    println!();
+    drop(mnemonic);
+    Ok(())
+}
+
+/// Re-prompt the user for a mnemonic and validate its checksum, without
+/// doing anything with the resulting key. Useful as a sanity check after
+/// transcribing the words.
+pub async fn run_key_verify() -> Result<()> {
+    let mnemonic = prompt_mnemonic()?;
+    println!();
+    println!("✅  Mnemonic is well-formed (24 words, checksum valid).");
+    drop(mnemonic);
+    Ok(())
 }
 
 pub async fn run_scan(config_path: &Path, catalog_path: &Path) -> Result<()> {
-    let mut engine = open_engine(config_path, catalog_path)?;
+    let config = load_config(config_path)?;
+    let transform = build_content_transform(&config)?;
+    let mut engine = open_engine_with_transform(config_path, catalog_path, transform)?;
     let summary = engine.run_pass().await.context("run_pass failed")?;
     let mut out = std::io::stdout().lock();
     writeln!(out, "Scan complete:")?;
@@ -186,7 +284,9 @@ pub async fn run_restore(
     target: &str,
     out_path: &Path,
 ) -> Result<()> {
-    let engine = open_engine(config_path, catalog_path)?;
+    let config = load_config(config_path)?;
+    let transform = build_content_transform(&config)?;
+    let engine = open_engine_with_transform(config_path, catalog_path, transform)?;
     let content = resolve_target_to_content(&engine, target)?;
     engine
         .restore(content, out_path)
@@ -224,7 +324,8 @@ pub async fn run_gc(
     confirm: bool,
 ) -> Result<()> {
     let config = load_config(config_path)?;
-    let engine = Engine::open(config.clone(), catalog_path).context("opening engine")?;
+    let engine =
+        Engine::open(config.clone(), catalog_path, Box::new(Identity)).context("opening engine")?;
     let retain = retain_after_secs
         .or(config.retention.retain_after_secs)
         .ok_or_else(|| {

@@ -1,0 +1,14 @@
+[package]
+name = "cairn-bip39"
+version.workspace = true
+edition.workspace = true
+description = "Interactive BIP-39 mnemonic entry for Cairn — vendored from max-lt/bip39-cli to keep GUI front-ends in tree"
+
+[features]
+default = ["crossterm"]
+crossterm = ["dep:crossterm"]
+
+[dependencies]
+bip39 = { workspace = true }
+zeroize = { workspace = true }
+crossterm = { workspace = true, optional = true }

@@ -13,8 +13,14 @@
 //! restore can verify the reassembled, reverse-transformed file.
 
 use bytes::Bytes;
+use zeroize::Zeroizing;
 
 use crate::CasError;
+
+/// Domain-separation label for the chunk-encryption key derivation. Bumping
+/// this label invalidates every prior backup, so it must NEVER change in
+/// a deployed installation.
+pub const CONTENT_KEY_DOMAIN: &str = "cairn-content-key-v1";
 
 /// Two-way transform applied to chunk bytes on the way to / from the
 /// remote object store.
@@ -74,13 +80,15 @@ impl ChunkTransform for Identity {
 /// Poly1305 tag is appended by ChaCha20-Poly1305 to the ciphertext, so
 /// the stored size for a plaintext of length `N` is `12 + N + 16`.
 pub struct Encrypt {
-    key: [u8; 32],
+    key: Zeroizing<[u8; 32]>,
 }
 
 impl Encrypt {
     /// Build from a 32-byte raw key (test fixtures).
     pub fn from_key(key: [u8; 32]) -> Self {
-        Self { key }
+        Self {
+            key: Zeroizing::new(key),
+        }
     }
 
     /// Derive a 32-byte content key from a passphrase + salt via
@@ -92,7 +100,30 @@ impl Encrypt {
         argon
             .hash_password_into(passphrase.as_bytes(), salt, &mut key)
             .map_err(|e| CasError::Transform(format!("argon2 KDF failed: {e}")))?;
-        Ok(Self { key })
+        Ok(Self {
+            key: Zeroizing::new(key),
+        })
+    }
+
+    /// Derive the content key from a BIP-39 mnemonic.
+    ///
+    /// `mnemonic.to_seed("")` runs PBKDF2-HMAC-SHA512 with 2048 iterations
+    /// per BIP-39 — 64 bytes of pre-spread entropy. We then domain-separate
+    /// via `blake3::derive_key(CONTENT_KEY_DOMAIN, seed)` so this key is
+    /// unrelated to any other key the user might derive from the same
+    /// mnemonic (notably the per-machine signing key, which gets its own
+    /// domain label in `cairn-engine`).
+    ///
+    /// The mnemonic ITSELF is the master content secret — the same
+    /// mnemonic on every one of the user's machines produces the same
+    /// content key, which is what keeps convergent dedup intact across
+    /// machines (see Scheme A in `docs/plan.md`).
+    pub fn from_mnemonic(mnemonic: &bip39::Mnemonic) -> Self {
+        let seed = mnemonic.to_seed("");
+        let key = blake3::derive_key(CONTENT_KEY_DOMAIN, &seed);
+        Self {
+            key: Zeroizing::new(key),
+        }
     }
 }
 
@@ -104,7 +135,7 @@ impl ChunkTransform for Encrypt {
         let mut nonce_bytes = [0u8; 12];
         nonce_bytes.copy_from_slice(&blake3::hash(plaintext).as_bytes()[..12]);
 
-        let cipher = ChaCha20Poly1305::new_from_slice(&self.key)
+        let cipher = ChaCha20Poly1305::new_from_slice(&*self.key)
             .map_err(|e| CasError::Transform(format!("invalid AEAD key: {e}")))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher
@@ -128,7 +159,7 @@ impl ChunkTransform for Encrypt {
             )));
         }
         let (nonce_bytes, body) = stored.split_at(12);
-        let cipher = ChaCha20Poly1305::new_from_slice(&self.key)
+        let cipher = ChaCha20Poly1305::new_from_slice(&*self.key)
             .map_err(|e| CasError::Transform(format!("invalid AEAD key: {e}")))?;
         let nonce = Nonce::from_slice(nonce_bytes);
         let plaintext = cipher
@@ -263,5 +294,53 @@ mod tests {
         let b = Encrypt::from_passphrase("pass", b"salt-bbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap();
         let plain = b"identical plaintext";
         assert_ne!(a.apply(plain).unwrap(), b.apply(plain).unwrap());
+    }
+
+    #[test]
+    fn from_mnemonic_is_deterministic_for_same_words() {
+        // Standard BIP-39 12-word test vector with valid checksum.
+        let m = bip39::Mnemonic::parse_in(
+            bip39::Language::English,
+            "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about",
+        )
+        .unwrap();
+        let e1 = Encrypt::from_mnemonic(&m);
+        let e2 = Encrypt::from_mnemonic(&m);
+        let plain = b"some chunk";
+        assert_eq!(e1.apply(plain).unwrap(), e2.apply(plain).unwrap());
+    }
+
+    #[test]
+    fn from_mnemonic_round_trips() {
+        let m = bip39::Mnemonic::parse_in(
+            bip39::Language::English,
+            "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about",
+        )
+        .unwrap();
+        let e = Encrypt::from_mnemonic(&m);
+        let plain = b"the round-trip plaintext";
+        let cipher = e.apply(plain).unwrap();
+        assert_eq!(e.reverse(&cipher).unwrap().as_ref(), plain);
+    }
+
+    #[test]
+    fn different_mnemonics_yield_different_ciphertext() {
+        let m1 = bip39::Mnemonic::parse_in(
+            bip39::Language::English,
+            "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about",
+        )
+        .unwrap();
+        let m2 = bip39::Mnemonic::parse_in(
+            bip39::Language::English,
+            "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+        )
+        .unwrap();
+        let plain = b"same plaintext";
+        let c1 = Encrypt::from_mnemonic(&m1).apply(plain).unwrap();
+        let c2 = Encrypt::from_mnemonic(&m2).apply(plain).unwrap();
+        assert_ne!(c1, c2);
     }
 }

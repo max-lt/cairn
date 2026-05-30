@@ -5,6 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+cairn-bip39 = { path = "../crates/cairn-bip39", default-features = false }
 cairn-types = { workspace = true }
 cairn-cas = { workspace = true }
 cairn-log = { workspace = true }
@@ -43,6 +44,10 @@ path = "integration/encryption.rs"
 [[test]]
 name = "engine"
 path = "integration/engine.rs"
+
+[[test]]
+name = "mnemonic"
+path = "integration/mnemonic.rs"
 
 [[test]]
 name = "full_cycle"

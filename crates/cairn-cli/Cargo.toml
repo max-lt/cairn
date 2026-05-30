@@ -8,6 +8,8 @@ name = "cairn"
 path = "src/main.rs"
 
 [dependencies]
+cairn-bip39 = { workspace = true }
+cairn-cas = { workspace = true }
 cairn-engine = { workspace = true }
 cairn-log = { workspace = true }
 cairn-types = { workspace = true }

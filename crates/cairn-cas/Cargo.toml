@@ -6,12 +6,14 @@ edition.workspace = true
 [dependencies]
 cairn-types = { workspace = true }
 argon2 = { workspace = true }
+bip39 = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 chacha20poly1305 = { workspace = true }
 fastcdc = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

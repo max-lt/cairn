@@ -36,6 +36,9 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
+    /// Manage the BIP-39 content-key recovery phrase.
+    #[command(subcommand)]
+    Key(KeyCmd),
     /// Run a full pass (scan + backup + push).
     Scan,
     /// Print index statistics: contents, duplicates, orphans, sync state.
@@ -70,6 +73,16 @@ enum Cmd {
         #[arg(long)]
         confirm: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum KeyCmd {
+    /// Generate a fresh 24-word BIP-39 recovery phrase and display it.
+    /// NOTHING is written to disk — write the words down on paper.
+    Init,
+    /// Re-type a mnemonic and validate its checksum (sanity check after
+    /// transcription).
+    Verify,
 }
 
 fn main() -> ExitCode {
@@ -116,6 +129,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         .context("build tokio runtime")?;
 
     match cli.cmd {
+        Cmd::Key(KeyCmd::Init) => rt.block_on(commands::run_key_init()),
+        Cmd::Key(KeyCmd::Verify) => rt.block_on(commands::run_key_verify()),
         Cmd::Scan => rt.block_on(commands::run_scan(&config_path, &catalog_path)),
         Cmd::Status => rt.block_on(commands::run_status(&config_path, &catalog_path)),
         Cmd::Dupes => rt.block_on(commands::run_dupes(&config_path, &catalog_path)),

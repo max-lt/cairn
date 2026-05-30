@@ -3,14 +3,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use cairn_cas::{CdcChunker, ChunkTransform, Encrypt, Identity};
+use cairn_cas::{CdcChunker, ChunkTransform};
 use cairn_catalog::{Catalog, CatalogChange, LocalChainState, PassUpdates};
 use cairn_log::ChainTip;
 use cairn_log::{LocationState, MachineLog, Projection, Segment};
 use cairn_remote::Remote;
 use cairn_types::{
-    CatalogEntry, Config, ContentHash, EncryptionConfig, LogEntry, MachineConfig, MachineId,
-    PathKey, RemoteConfig,
+    CatalogEntry, Config, ContentHash, LogEntry, MachineConfig, MachineId, PathKey, RemoteConfig,
 };
 use ed25519_dalek::SigningKey;
 use tracing::{debug, info, warn};
@@ -68,24 +67,31 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Open an engine from a [`Config`] and a catalog database path.
+    /// Open an engine from a [`Config`], a catalog database path, and an
+    /// explicit [`ChunkTransform`].
     ///
-    /// - Loads or generates the ed25519 signing key (config.machine.key_path).
-    /// - Opens / creates the redb catalog at `catalog_path`.
-    /// - Restores the local chain state (`next_seq`, `tip`, `last_hlc`,
-    ///   `last_pushed_seq`) from the catalog's meta table.
-    /// - Rebuilds an in-memory [`Projection`] from the catalog
-    ///   (best-effort: live locations + chain tips; tombstones from
-    ///   prior runs are not replayed, which is acceptable because future
-    ///   tombstones are reapplied idempotently when foreign segments
-    ///   re-arrive via `pull_from`).
-    /// - Builds the [`Remote`] backend (Memory / LocalFilesystem / R2).
-    /// - Builds a [`CdcChunker`] from `config.chunking.avg_size`.
-    /// - Builds a [`ChunkTransform`]: [`Identity`] unless
-    ///   `config.encryption.enabled` is true, in which case the
-    ///   passphrase is read from the `CAIRN_PASSPHRASE` env var and
-    ///   combined with the salt at `config.encryption.salt_path`.
-    pub fn open(config: Config, catalog_path: &Path) -> Result<Self, EngineError> {
+    /// The caller is responsible for building the transform with the
+    /// right semantics for the command being run:
+    ///
+    /// - Metadata-only operations (`status`, `dupes`, `locate`,
+    ///   `orphans`, `sync` pull, `check`, `scan --metadata-only`):
+    ///   pass [`Box::new(Identity)`](cairn_cas::Identity) — no content
+    ///   key needed.
+    /// - Content operations (`scan --backup`, `backup`, `restore`):
+    ///   prompt the user for a BIP-39 mnemonic (or read from a 0600
+    ///   file in cron mode), derive the content key via
+    ///   [`Encrypt::from_mnemonic`](cairn_cas::Encrypt::from_mnemonic),
+    ///   and pass `Box::new(encrypt)`.
+    ///
+    /// The signing key (machine identity) is **independent** of the
+    /// content key: it's a per-machine random seed at
+    /// `config.machine.key_path`, generated on first run. Stealing the
+    /// signing key file alone never enables content decryption.
+    pub fn open(
+        config: Config,
+        catalog_path: &Path,
+        transform: Box<dyn ChunkTransform>,
+    ) -> Result<Self, EngineError> {
         let key = load_or_generate_key(&config.machine)?;
         let catalog = Catalog::open(catalog_path)?;
 
@@ -99,7 +105,6 @@ impl Engine {
         let projection = rebuild_projection_from_catalog(&catalog, &log)?;
         let remote = build_remote(&config.remote)?;
         let chunker = CdcChunker::from_avg_size(config.chunking.avg_size);
-        let transform = build_transform(&config.encryption)?;
 
         Ok(Self {
             config,
@@ -313,6 +318,175 @@ impl Engine {
         restore_module::restore(content, out_path, &self.remote, &*self.transform).await
     }
 
+    /// Run scan + log + catalog + push, **without** any content backup.
+    ///
+    /// This is the "metadata-only" pass: the engine touches every
+    /// configured root, records `Observed` / `Vanished` events, but
+    /// never reads file bytes for upload (no chunk encryption, no
+    /// chunk uploads, no manifests written). Use this for the common
+    /// `cairn scan` flow on encrypted setups where the user does not
+    /// want to type their mnemonic on a cron-driven scan.
+    ///
+    /// Backups can be performed later via [`Self::backup_pending`]
+    /// with the content-key-aware transform supplied at engine open.
+    pub async fn run_pass_metadata_only(&mut self) -> Result<PassSummary, EngineError> {
+        let mut summary = PassSummary::default();
+        let scan_config = cairn_scan::ScanConfig {
+            excludes: self.config.excludes.clone(),
+            ..cairn_scan::ScanConfig::default()
+        };
+        let scanner = cairn_scan::Scanner::new(scan_config);
+
+        let mut catalog_changes: Vec<CatalogChange> = Vec::new();
+        let mut pending: Vec<LogEntry> = Vec::new();
+
+        for root in self.config.scan_roots.clone() {
+            let prev_entries = self
+                .catalog
+                .iter_catalog_under(&PathKey::from_path(&root))?;
+            let prev: HashMap<PathKey, CatalogEntry> = prev_entries
+                .into_iter()
+                .map(|e| (e.path.clone(), e))
+                .collect();
+
+            let events = scanner.scan_root(&root, &prev).map_err(map_scan_error)?;
+            summary.roots_scanned += 1;
+
+            for event in events {
+                match event {
+                    cairn_scan::ScanEvent::Observed {
+                        content,
+                        path,
+                        size,
+                        mtime,
+                        file_id,
+                    } => {
+                        summary.new_observations += 1;
+                        let entry = self.log.append_observed(content, path.clone(), size, mtime);
+                        self.projection.fold_entry(&entry);
+                        catalog_changes.push(CatalogChange::Upsert(CatalogEntry {
+                            path: path.clone(),
+                            content,
+                            size,
+                            mtime,
+                            file_id,
+                            last_scan: entry.hlc,
+                        }));
+                        pending.push(entry);
+                    }
+                    cairn_scan::ScanEvent::Vanished { path, last_content } => {
+                        summary.vanished += 1;
+                        let entry = self.log.append_vanished(path.clone(), last_content);
+                        self.projection.fold_entry(&entry);
+                        catalog_changes.push(CatalogChange::Delete(path));
+                        pending.push(entry);
+                    }
+                    cairn_scan::ScanEvent::PassCompleted {
+                        root,
+                        files_seen,
+                        bytes_seen,
+                    } => {
+                        summary.files_seen += files_seen;
+                        summary.bytes_seen += bytes_seen;
+                        let entry = self.log.append_pass_completed(root, files_seen, bytes_seen);
+                        self.projection.fold_entry(&entry);
+                        pending.push(entry);
+                    }
+                }
+            }
+        }
+
+        self.commit_pass(catalog_changes)?;
+        if !pending.is_empty() {
+            let push_summary =
+                push_pending_as_segment(&self.log, &self.catalog, &self.remote, pending).await?;
+            summary.entries_pushed = push_summary.entries_pushed;
+        }
+        info!(
+            roots = summary.roots_scanned,
+            new = summary.new_observations,
+            vanished = summary.vanished,
+            pushed = summary.entries_pushed,
+            "run_pass_metadata_only completed"
+        );
+        Ok(summary)
+    }
+
+    /// Upload every content that is `Observed` in the projection but not
+    /// yet `backed_up`, using the engine's [`ChunkTransform`].
+    ///
+    /// Intended for the deferred-backup flow: the user runs
+    /// `cairn scan` (which calls [`Self::run_pass_metadata_only`])
+    /// without their mnemonic, then later runs `cairn backup` after
+    /// providing the mnemonic, which builds an `Encrypt` and calls this.
+    ///
+    /// Files that were observed but have since been deleted locally are
+    /// logged at `warn!` and skipped — they will be retried next time
+    /// the user has both the content available and the mnemonic.
+    pub async fn backup_pending(&mut self) -> Result<PassSummary, EngineError> {
+        let mut summary = PassSummary::default();
+        let mut pending: Vec<LogEntry> = Vec::new();
+
+        let to_back: Vec<(ContentHash, PathBuf)> = self
+            .projection
+            .content_index
+            .iter()
+            .filter(|(_, r)| !r.backed_up)
+            .filter_map(|(hash, r)| {
+                r.live_locations
+                    .iter()
+                    .find(|loc| loc.machine == self.log.machine())
+                    .map(|loc| (*hash, loc.path.to_path_buf()))
+            })
+            .collect();
+
+        for (content, fs_path) in &to_back {
+            if !fs_path.exists() {
+                warn!(
+                    content = %content,
+                    path = %fs_path.display(),
+                    "file vanished between scan and backup; will retry next time"
+                );
+                continue;
+            }
+            match backup_content(
+                *content,
+                fs_path,
+                &self.remote,
+                &self.chunker,
+                &*self.transform,
+                self.log.current_hlc(),
+            )
+            .await
+            {
+                Ok(bs) => {
+                    summary.contents_backed_up += 1;
+                    summary.chunks_uploaded += bs.chunks_uploaded;
+                    summary.bytes_uploaded += bs.bytes_uploaded;
+                    let backed = self.log.append_backed(*content);
+                    self.projection.fold_entry(&backed);
+                    pending.push(backed);
+                }
+                Err(e) => warn!(content = %content, error = %e, "backup failed; will retry"),
+            }
+        }
+
+        self.commit_pass(Vec::new())?;
+        if !pending.is_empty() {
+            let ps =
+                push_pending_as_segment(&self.log, &self.catalog, &self.remote, pending).await?;
+            summary.entries_pushed = ps.entries_pushed;
+        }
+        info!(
+            backed_up = summary.contents_backed_up,
+            chunks = summary.chunks_uploaded,
+            bytes = summary.bytes_uploaded,
+            pushed = summary.entries_pushed,
+            "backup_pending completed"
+        );
+        Ok(summary)
+    }
+
     /// Verify the local machine's pushed segments end-to-end: chain
     /// continuity, per-entry hash + signature. Reports the path of any
     /// segment that failed to verify.
@@ -398,21 +572,6 @@ fn build_remote(remote_cfg: &RemoteConfig) -> Result<Remote, EngineError> {
             Ok(Remote::r2(endpoint, bucket, &access, &secret)?)
         }
     }
-}
-
-fn build_transform(cfg: &EncryptionConfig) -> Result<Box<dyn ChunkTransform>, EngineError> {
-    if !cfg.enabled {
-        return Ok(Box::new(Identity));
-    }
-    let salt_path = cfg.salt_path.as_ref().ok_or_else(|| {
-        cairn_cas::CasError::Transform("encryption.salt_path missing".to_string())
-    })?;
-    let salt = std::fs::read(salt_path)?;
-    let passphrase = std::env::var("CAIRN_PASSPHRASE").map_err(|_| {
-        cairn_cas::CasError::Transform("CAIRN_PASSPHRASE env var not set".to_string())
-    })?;
-    let enc = Encrypt::from_passphrase(&passphrase, &salt)?;
-    Ok(Box::new(enc))
 }
 
 fn load_or_generate_key(cfg: &MachineConfig) -> Result<SigningKey, EngineError> {

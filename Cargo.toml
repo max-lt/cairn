@@ -8,6 +8,7 @@ members = [
     "crates/cairn-remote",
     "crates/cairn-engine",
     "crates/cairn-cli",
+    "crates/cairn-bip39",
     "tests",
 ]
 resolver = "3"
@@ -25,6 +26,7 @@ cairn-catalog = { path = "crates/cairn-catalog" }
 cairn-scan = { path = "crates/cairn-scan" }
 cairn-remote = { path = "crates/cairn-remote" }
 cairn-engine = { path = "crates/cairn-engine" }
+cairn-bip39 = { path = "crates/cairn-bip39" }
 
 # Hashing
 blake3 = "1"
@@ -59,6 +61,15 @@ chacha20poly1305 = "0.10"
 
 # Password-derived KDF (M11)
 argon2 = "0.5"
+
+# BIP-39 mnemonics (M16) — content-key seed material
+bip39 = { version = "2.2", features = ["zeroize", "rand"] }
+
+# Secret zeroization
+zeroize = "1"
+
+# Terminal raw-mode for interactive mnemonic entry
+crossterm = "0.29"
 
 # Random
 rand = "0.9"
