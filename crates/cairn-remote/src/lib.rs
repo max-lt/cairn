@@ -11,10 +11,30 @@
 //!   `log/<machine_id_hex>/<seq_start:020>.seg`.
 //! - **Snapshots**: serialized projections at `snapshots/<state_hash_hex>`.
 //!
-//! Every read of a chunk **re-hashes** the returned bytes and rejects them
-//! with [`RemoteError::ChunkIntegrity`] if they do not match the requested
-//! [`ChunkId`]. This is the verify-on-read discipline: corrupted bytes are
-//! treated as missing, never silently served.
+//! ## Integrity chain
+//!
+//! Two complementary checks defend against bit flips between the user's
+//! disk and the local-restore call site:
+//!
+//! 1. **Server-side validation on upload (R2 only).** The S3 backend is
+//!    built with `Checksum::SHA256`: every `PUT` carries an
+//!    `x-amz-checksum-sha256` header computed by `object_store` from the
+//!    request body. R2 re-computes the SHA-256 on the receiving side and
+//!    rejects the upload with `400 BadDigest` on mismatch. Without this,
+//!    a network corruption during upload would silently land in the
+//!    bucket — detected only at restore-time, too late if the local
+//!    copy has been deleted.
+//! 2. **Verify-on-read.** Every [`Remote::get_chunk`] re-hashes the
+//!    returned bytes with BLAKE3 and rejects them with
+//!    [`RemoteError::ChunkIntegrity`] if they do not match the
+//!    requested [`ChunkId`]. Corrupted bytes are treated as missing,
+//!    never silently served.
+//!
+//! BLAKE3 (our `ChunkId`) and SHA-256 (the wire-time check) are
+//! different functions on purpose: BLAKE3 is what we use for
+//! content-addressing because it's faster, but SHA-256 is the only
+//! hash R2's `x-amz-checksum-*` header understands, so we ride it for
+//! the upload verification.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -102,6 +122,13 @@ impl Remote {
     }
 
     /// Cloudflare R2 (reached via the S3-compatible backend).
+    ///
+    /// Configures `Checksum::SHA256` on the builder, which makes
+    /// `object_store` add an `x-amz-checksum-sha256` header to every
+    /// PUT. R2 re-computes the SHA-256 of the received body and
+    /// rejects with `400 BadDigest` on mismatch — this is the upload
+    /// half of Cairn's integrity story (see the module docs for the
+    /// full chain).
     pub fn r2(
         endpoint: &str,
         bucket: &str,
@@ -117,6 +144,10 @@ impl Remote {
                 // R2 is region-agnostic but the AWS SDK still expects one;
                 // "auto" works for R2.
                 .with_region("auto")
+                // Server-side upload integrity: R2 verifies every PUT
+                // body against the x-amz-checksum-sha256 header that
+                // object_store computes from the payload.
+                .with_checksum_algorithm(object_store::aws::Checksum::SHA256)
                 .build(),
         )?;
         Ok(Self {
