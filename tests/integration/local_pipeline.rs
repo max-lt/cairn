@@ -112,6 +112,7 @@ fn run_pass(
                 next_seq: log.next_seq(),
                 tip: log.current_tip(),
                 last_hlc: log.current_hlc(),
+                last_pushed_seq: 0,
             },
         })
         .unwrap();

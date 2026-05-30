@@ -28,3 +28,7 @@ path = "integration/local_pipeline.rs"
 [[test]]
 name = "backup_restore"
 path = "integration/backup_restore.rs"
+
+[[test]]
+name = "sync"
+path = "integration/sync.rs"

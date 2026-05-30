@@ -23,8 +23,8 @@ use redb::{Database, ReadableTable, backends::InMemoryBackend};
 
 mod tables;
 use tables::{
-    CATALOG_TABLE, CONTENT_INDEX_TABLE, META_LAST_HLC, META_LOCAL_NEXT_SEQ, META_LOCAL_TIP,
-    META_TABLE, PATH_TO_CONTENT_TABLE, SYNC_STATE_TABLE,
+    CATALOG_TABLE, CONTENT_INDEX_TABLE, META_LAST_HLC, META_LAST_PUSHED_SEQ, META_LOCAL_NEXT_SEQ,
+    META_LOCAL_TIP, META_TABLE, PATH_TO_CONTENT_TABLE, SYNC_STATE_TABLE,
 };
 
 /// Errors produced by [`cairn-catalog`](crate) operations.
@@ -59,6 +59,10 @@ pub struct LocalChainState {
     pub tip: [u8; 32],
     /// Highest HLC value the machine clock has produced or witnessed.
     pub last_hlc: u64,
+    /// Highest local seq successfully pushed to the remote, or 0 if no
+    /// pushes have happened yet. Push code reads this to know where to
+    /// resume; pull code never touches it.
+    pub last_pushed_seq: u64,
 }
 
 /// A scanner-emitted change to the per-path catalog table.
@@ -313,10 +317,15 @@ impl Catalog {
             Some(g) => decode_hash(g.value())?,
             None => [0u8; 32],
         };
+        let last_pushed_seq = match r(table.get(META_LAST_PUSHED_SEQ))? {
+            Some(g) => decode_u64(g.value())?,
+            None => 0,
+        };
         Ok(LocalChainState {
             next_seq,
             tip,
             last_hlc,
+            last_pushed_seq,
         })
     }
 
@@ -327,9 +336,11 @@ impl Catalog {
             let mut table = r(write_txn.open_table(META_TABLE))?;
             let seq_bytes = state.next_seq.to_le_bytes();
             let hlc_bytes = state.last_hlc.to_le_bytes();
+            let pushed_bytes = state.last_pushed_seq.to_le_bytes();
             r(table.insert(META_LOCAL_NEXT_SEQ, seq_bytes.as_slice()))?;
             r(table.insert(META_LAST_HLC, hlc_bytes.as_slice()))?;
             r(table.insert(META_LOCAL_TIP, state.tip.as_slice()))?;
+            r(table.insert(META_LAST_PUSHED_SEQ, pushed_bytes.as_slice()))?;
         }
         r(write_txn.commit())?;
         Ok(())
@@ -418,9 +429,11 @@ impl Catalog {
             let mut meta = r(write_txn.open_table(META_TABLE))?;
             let seq_bytes = pass.local_chain.next_seq.to_le_bytes();
             let hlc_bytes = pass.local_chain.last_hlc.to_le_bytes();
+            let pushed_bytes = pass.local_chain.last_pushed_seq.to_le_bytes();
             r(meta.insert(META_LOCAL_NEXT_SEQ, seq_bytes.as_slice()))?;
             r(meta.insert(META_LAST_HLC, hlc_bytes.as_slice()))?;
             r(meta.insert(META_LOCAL_TIP, pass.local_chain.tip.as_slice()))?;
+            r(meta.insert(META_LAST_PUSHED_SEQ, pushed_bytes.as_slice()))?;
         }
         r(write_txn.commit())?;
         Ok(())
@@ -629,6 +642,7 @@ mod tests {
                 next_seq: log.next_seq(),
                 tip: log.current_tip(),
                 last_hlc: log.current_hlc(),
+                last_pushed_seq: 0,
             },
         }
     }
@@ -693,6 +707,7 @@ mod tests {
                 next_seq: log.next_seq(),
                 tip: log.current_tip(),
                 last_hlc: log.current_hlc(),
+                last_pushed_seq: 0,
             },
         };
         cat.apply_pass(&pass).unwrap();
@@ -750,6 +765,7 @@ mod tests {
             next_seq: 42,
             tip: [7u8; 32],
             last_hlc: 123_456_789,
+            last_pushed_seq: 39,
         };
         cat.set_local_chain_state(state).unwrap();
         let back = cat.local_chain_state().unwrap();

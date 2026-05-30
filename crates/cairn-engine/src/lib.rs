@@ -8,11 +8,15 @@
 
 pub mod backup;
 pub mod restore;
+pub mod sync;
 
 pub use backup::{BackupSummary, backup_content};
 pub use restore::restore;
+pub use sync::{
+    PullSummary, PushSummary, list_remote_machines, pull_from, push_pending_as_segment,
+};
 
-/// Errors produced by [`cairn-engine`](crate) backup / restore.
+/// Errors produced by [`cairn-engine`](crate) backup / restore / sync.
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     /// An I/O error occurred while reading or writing a file.
@@ -27,6 +31,19 @@ pub enum EngineError {
     /// A cairn-types operation failed (postcard, manifest version).
     #[error(transparent)]
     Types(#[from] cairn_types::TypesError),
+    /// A local catalog operation failed.
+    #[error(transparent)]
+    Catalog(#[from] cairn_catalog::CatalogError),
+    /// A log-layer operation failed (segment verify, chain continuity).
+    #[error(transparent)]
+    Log(#[from] cairn_log::LogError),
+    /// `push_pending_as_segment` was given entries that do not belong to
+    /// the local machine's own chain.
+    #[error("attempted to push entries authored by foreign machine {found}")]
+    PushForeignChain {
+        /// Hex of the foreign machine id that authored the entries.
+        found: String,
+    },
     /// Restore reassembled bytes whose blake3 did not match the requested
     /// [`ContentHash`](cairn_types::ContentHash). The file was **not**
     /// written.

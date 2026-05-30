@@ -244,6 +244,27 @@ impl Remote {
         fetch(&*self.store, &key.path).await
     }
 
+    /// Discover every machine that has ever pushed a segment to this remote.
+    pub async fn list_machines(&self) -> Result<Vec<MachineId>, RemoteError> {
+        let prefix = parse_os_path(&format!("{LOG_PREFIX}/"))?;
+        let mut stream = self.store.list(Some(&prefix));
+        use futures_util::StreamExt;
+        let mut machines = std::collections::BTreeSet::new();
+        while let Some(item) = stream.next().await {
+            let meta = backend(item)?;
+            let key = meta.location.to_string();
+            if let Some(rest) = key
+                .strip_prefix(LOG_PREFIX)
+                .and_then(|s| s.strip_prefix('/'))
+                && let Some((hex, _)) = rest.split_once('/')
+                && let Some(bytes) = decode_hex_32(hex)
+            {
+                machines.insert(MachineId::from(bytes));
+            }
+        }
+        Ok(machines.into_iter().collect())
+    }
+
     // ----- Snapshots -----------------------------------------------------
 
     /// Object key for a snapshot.

@@ -29,3 +29,6 @@ pub(crate) const META_LOCAL_TIP: &str = "local.tip";
 /// Meta key for the highest HLC the machine clock has produced or
 /// witnessed (u64 LE).
 pub(crate) const META_LAST_HLC: &str = "local.last_hlc";
+/// Meta key for the highest seq number this machine has successfully
+/// pushed to the remote (u64 LE). 0 means "no pushes yet".
+pub(crate) const META_LAST_PUSHED_SEQ: &str = "local.last_pushed_seq";
