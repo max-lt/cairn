@@ -6,9 +6,11 @@ edition.workspace = true
 [dependencies]
 cairn-types = { workspace = true }
 bytes = { workspace = true }
+futures-util = "0.3"
 object_store = { workspace = true }
-postcard = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -297,9 +297,9 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "cairn-types",
+ "futures-util",
  "object_store",
- "postcard",
- "serde",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
