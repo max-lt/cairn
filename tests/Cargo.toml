@@ -15,6 +15,7 @@ cairn-engine = { workspace = true }
 bytes = { workspace = true }
 ed25519-dalek = { workspace = true }
 object_store = { workspace = true }
+postcard = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -54,3 +55,23 @@ path = "integration/incremental.rs"
 [[test]]
 name = "dedup"
 path = "integration/dedup.rs"
+
+[[test]]
+name = "accidental_deletion"
+path = "safety/accidental_deletion.rs"
+
+[[test]]
+name = "never_deletes_user_files"
+path = "safety/never_deletes_user_files.rs"
+
+[[test]]
+name = "convergence"
+path = "safety/convergence.rs"
+
+[[test]]
+name = "crash_resume"
+path = "safety/crash_resume.rs"
+
+[[test]]
+name = "tamper_detection"
+path = "safety/tamper_detection.rs"

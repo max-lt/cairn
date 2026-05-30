@@ -320,6 +320,7 @@ dependencies = [
  "cairn-types",
  "ed25519-dalek",
  "object_store",
+ "postcard",
  "tempfile",
  "tokio",
  "tracing",
