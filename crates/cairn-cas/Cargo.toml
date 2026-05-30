@@ -5,11 +5,10 @@ edition.workspace = true
 
 [dependencies]
 cairn-types = { workspace = true }
-blake3 = { workspace = true }
 bytes = { workspace = true }
 fastcdc = { workspace = true }
-postcard = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
