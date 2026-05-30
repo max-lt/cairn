@@ -8,6 +8,7 @@ members = [
     "crates/cairn-remote",
     "crates/cairn-engine",
     "crates/cairn-cli",
+    "tests",
 ]
 resolver = "3"
 

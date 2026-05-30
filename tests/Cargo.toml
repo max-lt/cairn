@@ -1,0 +1,25 @@
+[package]
+name = "cairn-integration-tests"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+cairn-types = { workspace = true }
+cairn-cas = { workspace = true }
+cairn-log = { workspace = true }
+cairn-catalog = { workspace = true }
+cairn-scan = { workspace = true }
+cairn-remote = { workspace = true }
+cairn-engine = { workspace = true }
+ed25519-dalek = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }
+
+[lib]
+name = "cairn_integration_tests"
+path = "src/lib.rs"
+
+[[test]]
+name = "local_pipeline"
+path = "integration/local_pipeline.rs"

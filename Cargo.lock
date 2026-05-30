@@ -264,6 +264,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cairn-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "cairn-cas",
+ "cairn-catalog",
+ "cairn-engine",
+ "cairn-log",
+ "cairn-remote",
+ "cairn-scan",
+ "cairn-types",
+ "ed25519-dalek",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "cairn-log"
 version = "0.1.0"
 dependencies = [
