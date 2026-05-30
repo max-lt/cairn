@@ -226,12 +226,13 @@ dependencies = [
 name = "cairn-catalog"
 version = "0.1.0"
 dependencies = [
+ "cairn-log",
  "cairn-types",
+ "ed25519-dalek",
  "postcard",
  "redb",
- "serde",
+ "tempfile",
  "thiserror",
- "tracing",
 ]
 
 [[package]]

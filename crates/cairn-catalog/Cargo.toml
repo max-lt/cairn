@@ -5,8 +5,11 @@ edition.workspace = true
 
 [dependencies]
 cairn-types = { workspace = true }
+cairn-log = { workspace = true }
 postcard = { workspace = true }
 redb = { workspace = true }
-serde = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
+
+[dev-dependencies]
+ed25519-dalek = { workspace = true }
+tempfile = { workspace = true }
