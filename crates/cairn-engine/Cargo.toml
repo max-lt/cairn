@@ -11,6 +11,8 @@ cairn-catalog = { workspace = true }
 cairn-scan = { workspace = true }
 cairn-remote = { workspace = true }
 bytes = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

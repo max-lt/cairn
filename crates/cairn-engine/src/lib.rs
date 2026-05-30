@@ -7,11 +7,13 @@
 //! in M12.
 
 pub mod backup;
+pub mod engine;
 pub mod restore;
 pub mod retention;
 pub mod sync;
 
 pub use backup::{BackupSummary, backup_content};
+pub use engine::{CheckReport, Engine, PassSummary};
 pub use restore::restore;
 pub use retention::{RetentionCandidate, RetentionPlan, dry_run_retention, gc_confirm};
 pub use sync::{

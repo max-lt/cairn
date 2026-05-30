@@ -296,6 +296,7 @@ dependencies = [
  "ed25519-dalek",
  "object_store",
  "postcard",
+ "rand 0.9.4",
  "tempfile",
  "thiserror",
  "tokio",
@@ -306,6 +307,7 @@ dependencies = [
 name = "cairn-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "cairn-cas",
  "cairn-catalog",
  "cairn-engine",
@@ -314,6 +316,7 @@ dependencies = [
  "cairn-scan",
  "cairn-types",
  "ed25519-dalek",
+ "object_store",
  "tempfile",
  "tokio",
  "tracing",

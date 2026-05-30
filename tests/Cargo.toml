@@ -12,7 +12,9 @@ cairn-catalog = { workspace = true }
 cairn-scan = { workspace = true }
 cairn-remote = { workspace = true }
 cairn-engine = { workspace = true }
+bytes = { workspace = true }
 ed25519-dalek = { workspace = true }
+object_store = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -36,3 +38,7 @@ path = "integration/sync.rs"
 [[test]]
 name = "encryption"
 path = "integration/encryption.rs"
+
+[[test]]
+name = "engine"
+path = "integration/engine.rs"
